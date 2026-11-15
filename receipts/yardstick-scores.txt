@@ -1,0 +1,58 @@
+## ovb-4b (PyTorch, AB-R-0862)
+  hair         median 0.929 mean 0.890 min 0.547
+  face         median 0.899 mean 0.889 min 0.742
+  head_recipe  median 0.912 mean 0.866 min 0.354 | in tolerance 10/12
+  per image hair 0.94 0.93 0.93 0.83 0.95 0.94 0.93 0.91 0.96 0.55 0.89 0.93
+  per image face 0.88 0.88 0.93 0.90 0.90 0.93 0.77 0.95 0.93 0.97 0.74 (ex09 left out: no reference face)
+  no-face picture: model also returned none 0/1
+  sec per query: median 10.84 max 15.28
+## yardstick-int8-every
+  hair         median 0.917 mean 0.915 min 0.839
+  face         median 0.750 mean 0.742 min 0.449
+  head_recipe  median 0.939 mean 0.926 min 0.774 | in tolerance 12/12
+  head_direct  median 0.414 mean 0.454 min 0.041 | in tolerance 1/12
+  per image hair 0.95 0.89 0.95 0.92 0.91 0.85 0.97 0.95 0.91 0.84 0.93 0.90
+  per image face 0.68 0.86 0.75 0.58 0.45 0.78 0.71 0.94 0.81 0.90 0.70 (ex09 left out: no reference face)
+  no-face picture: model also returned none 1/1
+  sec per query: median 0.63 max 0.88
+  load 1.1s resident(MLX active) 5.106544056 GB, MLX peak 6.473046334 GB, phys at end 5.760817008 GB
+## yardstick-int4-every
+  hair         median 0.913 mean 0.909 min 0.827
+  face         median 0.721 mean 0.704 min 0.333
+  head_recipe  median 0.940 mean 0.925 min 0.719 | in tolerance 11/12
+  head_direct  median 0.494 mean 0.517 min 0.039 | in tolerance 4/12
+  per image hair 0.90 0.89 0.96 0.93 0.88 0.86 0.97 0.93 0.92 0.83 0.93 0.91
+  per image face 0.72 0.90 0.61 0.55 0.33 0.72 0.58 0.90 0.85 0.85 0.74 (ex09 left out: no reference face)
+  no-face picture: model also returned none 1/1
+  sec per query: median 0.47 max 0.63
+  load 0.7s resident(MLX active) 3.095408056 GB, MLX peak 4.461912434 GB, phys at end 3.726774664 GB
+## yardstick-int8
+  hair         median 0.909 mean 0.905 min 0.809
+  face         median 0.705 mean 0.719 min 0.338
+  head_recipe  median 0.932 mean 0.923 min 0.774 | in tolerance 12/12
+  head_direct  median 0.477 mean 0.533 min 0.000 | in tolerance 3/12
+  per image hair 0.92 0.89 0.95 0.91 0.87 0.85 0.97 0.95 0.90 0.81 0.93 0.91
+  per image face 0.70 0.84 0.76 0.55 0.34 0.65 0.71 0.94 0.84 0.90 0.70 (ex09 left out: no reference face)
+  no-face picture: model also returned none 1/1
+  sec per query: median 0.67 max 0.86
+  load 0.2s resident(MLX active) 5.106544056 GB, MLX peak 6.480122886 GB, phys at end 5.76990996 GB
+## yardstick-int4
+  hair         median 0.910 mean 0.906 min 0.809
+  face         median 0.703 mean 0.657 min 0.299
+  head_recipe  median 0.942 mean 0.920 min 0.705 | in tolerance 11/12
+  head_direct  median 0.489 mean 0.557 min 0.039 | in tolerance 5/12
+  per image hair 0.90 0.89 0.96 0.94 0.85 0.87 0.97 0.94 0.91 0.81 0.93 0.91
+  per image face 0.70 0.91 0.67 0.39 0.30 0.59 0.32 0.93 0.85 0.85 0.73 (ex09 left out: no reference face)
+  no-face picture: model also returned none 1/1
+  sec per query: median 0.46 max 0.63
+  load 0.2s resident(MLX active) 3.095408056 GB, MLX peak 4.46191155 GB, phys at end 3.719467352 GB
+## yardstick-qwen35-4b-4bit-single
+  hair         median 0.896 mean 0.835 min 0.490
+  face         median 0.552 mean 0.558 min 0.145
+  head_recipe  median 0.930 mean 0.849 min 0.374 | in tolerance 9/12
+  head_direct  median 0.382 mean 0.383 min 0.023 | in tolerance 1/12
+  per image hair 0.60 0.88 0.96 0.49 0.87 0.87 0.97 0.95 0.91 0.66 0.92 0.94
+  per image face 0.37 0.89 0.55 0.15 0.40 0.61 0.28 0.80 0.75 0.87 0.48 (ex09 left out: no reference face)
+  no-face picture: model also returned none 0/1
+  sec per query: median 0.51 max 0.66
+  load 0.9s resident(MLX active) 3.035 GB, MLX peak 4.385 GB, phys at end 3.63 GB
