@@ -1,0 +1,9 @@
+mlx-locate-swift
+Copyright 2026 Xocialize. Licensed under the Apache License, Version 2.0 (LICENSE).
+
+This package runs, but does not include, the Qwen3-VL-4B-Instruct model weights
+(Qwen/Qwen3-VL-4B-Instruct, Copyright Alibaba Cloud, Apache License 2.0), loaded from the
+mlx-community conversions mlx-community/Qwen3-VL-4B-Instruct-8bit and -4bit (Apache License 2.0).
+
+Inference uses mlx-swift and mlx-swift-lm (MIT, ml-explore) and swift-transformers /
+swift-huggingface (Apache License 2.0, Hugging Face).
