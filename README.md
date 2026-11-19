@@ -35,7 +35,7 @@ against it 0.70 → 0.75).
 | int8 (default) | `mlx-community/Qwen3-VL-4B-Instruct-8bit` @ `0943db6` | 5.24 GB | 7.59 GB | 0.63 s median |
 | int4 | `mlx-community/Qwen3-VL-4B-Instruct-4bit` @ `2fd8dac` | 3.20 GB | 5.61 GB | 0.47 s median |
 
-M5 Max 128 GB, macOS 27.3, Release, mlx-swift 0.32.4 (fleet fork), mlx-swift-lm 3.32.3, 2026-11-15. Resident is
+M5 Max 128 GB, macOS 27.3, Release, mlx-swift 0.32.4 (fleet fork), mlx-swift-lm 3.32.3, 2026-11-15. Re-run on mlx-swift-lm 3.33.0 + mlx-swift 0.33.1 (fleet fork, AB-D-0264) on 2026-11-19: int8 yardstick hair/face/head-crop medians 0.911 / 0.739 / 0.929, head crop 12/12 in tolerance, 0.62 s median query, MLX peak 6.35 GB (`receipts/yardstick-int8-mlxlm333.jsonl`). Resident is
 `phys_footprint` after load with the weights evaluated; peak is the ledger peak over one query on a 1022×1024 picture
 (1,081 prompt tokens), one process per number, MLX cache uncapped. Query times are the median over 36 queries (12
 pictures × hair, face, head). The GPU was shared with other sessions' jobs (60–98 % utilisation before the runs), so a

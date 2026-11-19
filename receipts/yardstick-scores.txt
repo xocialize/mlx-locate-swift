@@ -56,3 +56,13 @@
   no-face picture: model also returned none 0/1
   sec per query: median 0.51 max 0.66
   load 0.9s resident(MLX active) 3.035 GB, MLX peak 4.385 GB, phys at end 3.63 GB
+## yardstick-int8-mlxlm333
+  hair         median 0.911 mean 0.911 min 0.840
+  face         median 0.739 mean 0.743 min 0.449
+  head_recipe  median 0.929 mean 0.923 min 0.774 | in tolerance 12/12
+  head_direct  median 0.406 mean 0.483 min 0.000 | in tolerance 2/12
+  per image hair 0.91 0.89 0.95 0.92 0.89 0.86 0.97 0.96 0.91 0.84 0.93 0.90
+  per image face 0.68 0.87 0.77 0.58 0.45 0.74 0.71 0.94 0.83 0.90 0.70 (ex09 left out: no reference face)
+  no-face picture: model also returned none 1/1
+  sec per query: median 0.62 max 0.79
+  load 1.1s resident(MLX active) 5.106544056 GB, MLX peak 6.352720402 GB, phys at end 5.734176192 GB

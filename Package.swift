@@ -16,16 +16,19 @@ let package = Package(
         .executable(name: "locate-cli", targets: ["locate-cli"]),
     ],
     dependencies: [
-        // Qwen3-VL lives in MLXVLM; 3.32.3 is the release the fleet's image packages already resolve.
-        .package(url: "https://github.com/ml-explore/mlx-swift-lm", .upToNextMinor(from: "3.32.3")),
-        // The fleet fork: upstream 0.32.3 + the quantized-load leak fix (#501), the floor
-        // mlx-engine-swift requires (AB-A-0249). Same package identity as ml-explore's.
-        .package(url: "https://github.com/xocialize/mlx-swift", .upToNextMinor(from: "0.32.4")),
+        // Qwen3-VL lives in MLXVLM. 3.33.0 is the first release on mlx-swift 0.33, which carries the
+        // quantized-load leak fix (#501) the engine requires (AB-A-0249).
+        .package(url: "https://github.com/ml-explore/mlx-swift-lm", .upToNextMinor(from: "3.33.0")),
+        // The fleet fork, as mlx-engine-swift 0.82.1 takes it: 0.33.1 = upstream 0.33.0 with the
+        // vendored MLX's M5 head-dim-split attention routes disabled (AB-D-0264). Same package
+        // identity as ml-explore's.
+        .package(url: "https://github.com/xocialize/mlx-swift", .upToNextMinor(from: "0.33.1")),
         // mlx-swift-lm 3.x leaves the tokenizer and downloader to the consumer.
         .package(url: "https://github.com/huggingface/swift-huggingface", from: "0.9.0"),
         .package(url: "https://github.com/huggingface/swift-transformers", from: "1.3.0"),
-        // ≥0.80.0: contract 1.65.0 (the current release when this package was written).
-        .package(url: "https://github.com/xocialize/mlx-engine-swift", from: "0.80.0"),
+        // ≥0.80.0: contract 1.65.0 (the current release when this package was written);
+        // ≥0.82.1: mlx-swift from the fleet's 0.33.1 fork.
+        .package(url: "https://github.com/xocialize/mlx-engine-swift", from: "0.82.1"),
     ],
     targets: [
         .target(
