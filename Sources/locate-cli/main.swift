@@ -3,7 +3,9 @@
 //   locate-cli query     --model DIR --image P --phrase "…" [--count N] [--side 1024]
 //   locate-cli yardstick --model DIR --images a.png,b.png [--phrases "a|b"] [--side 1024] [--template single] [--out rows.jsonl]
 //   locate-cli mem-bench --model DIR --image P [--side 1024]     (one process per number)
-//   locate-cli engine    --model DIR --image P --phrase "…" [--quant int8|int4]   (through MLXServeEngine)
+//   locate-cli engine    --model DIR --image P --phrase "…" [--quant int8|int4]   (through MLXServeEngine, imageAnalysis)
+//   locate-cli typed     --model DIR --image P --phrase "…" [--count N] [--quant int8|int4]
+//                        (through MLXServeEngine, imageLocate; exits 4 if responseProblems is not empty)
 //
 // Every line printed is one JSON object. Timings need a Release build.
 import CoreGraphics
@@ -48,7 +50,7 @@ func boxesJSON(_ boxes: [LocatedBox], _ w: Int, _ h: Int) -> [[String: Any]] {
 
 let argv = Array(CommandLine.arguments.dropFirst())
 guard let command = argv.first else {
-    FileHandle.standardError.write(Data("usage: locate-cli query|yardstick|mem-bench|engine --model DIR …\n".utf8))
+    FileHandle.standardError.write(Data("usage: locate-cli query|yardstick|mem-bench|engine|typed --model DIR …\n".utf8))
     exit(2)
 }
 var opts = [String: String]()
@@ -137,6 +139,48 @@ case "engine":
         let resp = try await engine.run(ImageAnalysisRequest(image: image, prompt: q, mode: .answer), package: id)
         emit(["event": "engine-answer", "text": (resp as? ImageAnalysisResponse)?.text ?? ""])
     }
+
+case "typed":
+    // The typed surface end to end: register → load → ImageLocateRequest → ImageLocateResponse,
+    // checked with the surface's own declaration, plus the over-limit refusal and the memory peak.
+    let quant: Quant = opts["quant"] == "int4" ? .int4 : .int8
+    let cg = loadCG(opts["image"]!)
+    let data = try Data(contentsOf: URL(fileURLWithPath: opts["image"]!))
+    let image = MLXToolKit.Image(format: .png, data: data, width: cg.width, height: cg.height)
+    let engine = MLXServeEngine()
+    await engine.useModelStore(ModelStore(root: nil))
+    let id = try await engine.register(
+        LocatePackage.registration, configuration: LocateConfiguration(quant: quant, modelDirectory: modelDir))
+    let controls = LocatePackage.locateControls
+    let count = opts["count"].flatMap(Int.init)
+    var failed = false
+    var floor: UInt64 = 0
+    for rep in 0..<2 {
+        let request = ImageLocateRequest(image: image, prompt: opts["phrase"]!, count: count)
+        let t = Date()
+        guard let resp = try await engine.run(request, package: id) as? ImageLocateResponse else { exit(3) }
+        let sec = Date().timeIntervalSince(t)
+        let problems = controls.responseProblems(resp, for: request)
+        failed = failed || !problems.isEmpty
+        emit(["event": "typed", "rep": rep, "sec": sec, "count": request.effectiveCount,
+              "boxes": resp.boxes.map { ["x": $0.x, "y": $0.y, "width": $0.width, "height": $0.height,
+                                         "label": $0.label ?? "", "score": $0.score ?? -1] },
+              "n": resp.boxes.count, "response_problems": problems])
+        if rep == 0 { floor = vmInfo().phys_footprint }
+    }
+    do {
+        _ = try await engine.run(
+            ImageLocateRequest(image: image, prompt: opts["phrase"]!, count: controls.maxCount + 1), package: id)
+        emit(["event": "typed-over-limit", "refused": false]); failed = true
+    } catch {
+        emit(["event": "typed-over-limit", "refused": true, "error": "\(error)"])
+    }
+    emit(["event": "typed-done", "quant": quant.rawValue, "max_count": controls.maxCount,
+          "phys_after_bytes": vmInfo().phys_footprint, "phys_after_first_bytes": floor,
+          "phys_peak_bytes": UInt64(vmInfo().ledger_phys_footprint_peak),
+          "declared_bytes": LocateFootprint.residentBytes(for: quant) + LocateFootprint.peakActivationBytes,
+          "ok": !failed])
+    if failed { exit(4) }
 
 default:
     FileHandle.standardError.write(Data("unknown command \(command)\n".utf8))

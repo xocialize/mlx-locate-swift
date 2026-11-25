@@ -19,8 +19,18 @@ import MLXToolKit
 ///   int8   every-instance  5,238,378,864  7,591,466,288  2,353,087,424   (the shipped default)
 ///   int4   every-instance  3,197,569,976  5,614,374,776  2,416,804,800   (the shipped default)
 ///
-/// Declarations round up: resident 5.4 / 3.35 GB, activation 2.6 GB for both (activations do not
-/// quantize). The side cap (`measuredMaxSide`) bounds the visual tokens, so no request can exceed it.
+/// Those are one-box answers. A 16-box answer (the `imageLocate` surface always asks the model for
+/// up to 16, about 700 generated tokens) peaks higher. Measured 2026-11-25 through `MLXServeEngine`
+/// (`locate-cli typed`, mlx-swift 0.33.1 fleet fork, mlx-swift-lm 3.33.0, a 1024×1024 picture of
+/// 25 discs, "circle", count 16, two processes per quant, the larger peak; `receipts/typed/`):
+///
+///   quant  process peak   minus the floor above
+///   int8   8,052,741,544  2,814,362,680
+///   int4   6,122,426,352  2,926,871,680
+///
+/// Declarations round up: resident 5.4 / 3.35 GB, activation 3.0 GB for both (v0.2.0 declared 2.6,
+/// which covered one box, not sixteen). The side cap (`measuredMaxSide`) bounds the visual tokens
+/// and `Locator.maxTokenBudget` the generated ones, so no request can exceed it.
 public enum LocateFootprint {
     /// The longest picture side the activation was measured at. `LocateConfiguration` clamps to it.
     public static let measuredMaxSide = 1024
@@ -32,10 +42,11 @@ public enum LocateFootprint {
         }
     }
 
-    public static let peakActivationBytes: UInt64 = 2_600_000_000
+    public static let peakActivationBytes: UInt64 = 3_000_000_000
 }
 
-/// The `locate` mode: the prompt is a phrase, the answer is the boxes as JSON (the default).
+/// The `imageAnalysis` surface's `locate` mode: the prompt is a phrase, the answer is the boxes as
+/// JSON (that surface's default). The typed way to ask is `ImageLocateRequest`.
 extension Mode {
     public static let locate: Mode = "locate"
     /// Plain visual question answering with the same model.
@@ -63,10 +74,15 @@ public struct LocateAnswer: Codable, Sendable, Equatable {
 
 /// An MLXEngine package that locates a phrase in a picture with Qwen3-VL-4B-Instruct (Apache-2.0).
 ///
-/// The engine contract has no box-typed capability yet, so this serves `imageAnalysis`:
-/// - mode `locate` (or no mode): `prompt` is the phrase; the response text is `LocateAnswer` JSON.
-///   `metaData["count"]` (int) caps the number of boxes (default 16). An empty list is a success.
-/// - mode `answer`: the prompt is a question; the response is the model's text.
+/// Two surfaces on one loaded model:
+/// - `imageLocate` (contract 1.66.0, AB-A-0295): `ImageLocateRequest(image:prompt:count:)` →
+///   `ImageLocateResponse.boxes`, best first, at most `count` (nil → 1), every box scored. The
+///   model is always asked for up to `LocatePackage.locateControls.maxCount` boxes and the answer
+///   is `served(count:)`: clipped, in descending score, cut. An empty list is a success. The seed
+///   is ignored (greedy decode).
+/// - `imageAnalysis`: mode `answer` answers the prompt as text. Mode `locate` (or no mode) is the
+///   pre-1.66.0 carrier, kept so v0.1.0 / v0.2.0 clients keep working: the response text is
+///   `LocateAnswer` JSON in the model's own order, `metaData["count"]` caps it (default 16).
 @InferenceActor
 public final class LocatePackage: ModelPackage {
     public typealias Configuration = LocateConfiguration
@@ -95,8 +111,27 @@ public final class LocatePackage: ModelPackage {
                     summary: "Locate a phrase in a picture: mode `locate` (default) returns "
                         + "{\"boxes\": [{x, y, width, height, label, score}]} as JSON, fractions of the "
                         + "upright picture; mode `answer` answers the prompt as text.",
-                    modes: [.locate, .answer])
+                    modes: [.locate, .answer]),
+                ImageLocateContract.descriptor(
+                    name: "qwen3-vl-locate-boxes",
+                    summary: "Locate a phrase in a picture as typed boxes, best first: shares of the "
+                        + "upright picture, each with the model's label and a score (the geometric mean "
+                        + "probability of its coordinate tokens; for ranking, not calibrated). One box "
+                        + "per instance the phrase names; an empty list means it is not there. Measured "
+                        + "with English phrases; the picture's longest side is scaled to at most 1024 px.",
+                    controls: locateControls),
             ])
+    }
+
+    /// What the `imageLocate` surface declares: up to 16 boxes a request (the generation budget is
+    /// sized for 16, `Locator.tokenBudget`; measured on a 20-object picture), a score on every box,
+    /// and no seed (greedy decode, so the same picture and phrase give the same boxes).
+    public nonisolated static let locateControls = ImageLocateControls(maxCount: 16, scores: true, seeded: false)
+
+    /// The core's boxes as the contract's, in the core's order.
+    nonisolated static func contractBoxes(_ boxes: [LocatedBox]) -> [ImageLocateBox] {
+        boxes.map { ImageLocateBox(x: $0.x, y: $0.y, width: $0.width, height: $0.height,
+                                   label: $0.label, score: $0.score) }
     }
 
     private let configuration: Configuration
@@ -127,6 +162,7 @@ public final class LocatePackage: ModelPackage {
     public func run(_ request: any CapabilityRequest) async throws -> any CapabilityResponse {
         // CAN-1: the entry checkpoint is the first act of run().
         try Task.checkCancellation()
+        if let req = request as? ImageLocateRequest { return try await locate(req) }
         guard request.capability == .imageAnalysis, let req = request as? ImageAnalysisRequest else {
             throw PackageError.unsupportedCapability(request.capability)
         }
@@ -153,6 +189,26 @@ public final class LocatePackage: ModelPackage {
         default:
             throw PackageError.unsupportedRequestFeature("mode \(mode.rawValue) (supported: locate, answer)")
         }
+    }
+
+    /// The typed surface. Refuses what the engine's pre-flight refuses (empty prompt, count below 1
+    /// or above `maxCount`), so a directly driven package behaves the same.
+    private func locate(_ req: ImageLocateRequest) async throws -> ImageLocateResponse {
+        if let mode = req.mode, mode != .locate {
+            throw PackageError.unsupportedRequestFeature(
+                "mode \(mode.rawValue) (the imageLocate surface has no modes; `answer` is on imageAnalysis)")
+        }
+        if let reason = Self.locateControls.refusal(for: req) {
+            throw PackageError.unsupportedRequestFeature(reason)
+        }
+        guard let locator else { throw PackageError.notLoaded }
+        let cg = try Self.decode(req.image)
+        // Ask for every box the surface may return, then keep the best `count`: cutting the model's
+        // own list first would return the first boxes it wrote, not the ones it is surest of.
+        let result = try await locator.locate(
+            image: cg, phrase: req.prompt, maxBoxes: Self.locateControls.maxCount,
+            maxSide: configuration.effectiveMaxSide, onToken: { try Task.checkCancellation() })
+        return ImageLocateResponse(boxes: Self.contractBoxes(result.boxes).served(count: req.effectiveCount))
     }
 
     /// png / jpeg through ImageIO; raw BGRA8 and RGBA16 through CoreGraphics.

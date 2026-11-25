@@ -3,7 +3,7 @@
 // (MES image.locate, AB-A-0293). Qwen3-VL-4B-Instruct (Apache-2.0) through mlx-swift-lm's MLXVLM.
 //
 //   Locate       engine-agnostic core: Locator.locate(image:phrase:) -> [LocatedBox], scored
-//   MLXLocate    the MLXEngine package (imageAnalysis surface, `locate` mode returns the boxes as JSON)
+//   MLXLocate    the MLXEngine package (imageLocate: typed boxes; imageAnalysis: `answer`, and the older JSON `locate` mode)
 //   locate-cli   gates: the HairDeck yardstick, the memory bench, one-off queries
 import PackageDescription
 
@@ -26,7 +26,7 @@ let package = Package(
         // mlx-swift-lm 3.x leaves the tokenizer and downloader to the consumer.
         .package(url: "https://github.com/huggingface/swift-huggingface", from: "0.9.0"),
         .package(url: "https://github.com/huggingface/swift-transformers", from: "1.3.0"),
-        // ≥0.80.0: contract 1.65.0 (the current release when this package was written);
+        // ≥0.81.0: contract 1.66.0, the imageLocate capability (AB-A-0295);
         // ≥0.82.1: mlx-swift from the fleet's 0.33.1 fork.
         .package(url: "https://github.com/xocialize/mlx-engine-swift", from: "0.82.1"),
     ],

@@ -51,8 +51,22 @@ public final class Locator: @unchecked Sendable {
         #"Locate {p} in the image and output its bounding box in JSON format: [{"bbox_2d": [x1, y1, x2, y2], "label": "{p}"}]."#
 
     public static let defaultMaxSide = 1024
-    /// Enough for ~10 boxes at ~20 tokens each, plus the fence.
+    /// The floor of the generation budget. One box costs about 41 tokens with a four-word label
+    /// (measured on the yardstick: each digit is a token), so this alone holds about six boxes.
     public static let defaultMaxTokens = 256
+    /// The ceiling of the generation budget: bounds the run's time and its cache however long the
+    /// phrase is. A list that would run past it is cut, and the parser drops the unfinished entry.
+    public static let maxTokenBudget = 1024
+
+    /// The generation budget for up to `boxes` boxes of `phrase`: the fence, then per box the
+    /// `bbox_2d` entry (40 tokens budgeted; 16 boxes labelled "circle" took just under 640 in all)
+    /// and the label, which repeats the phrase (at most one token per two UTF-8 bytes, a generous
+    /// bound for Latin and CJK text). Never below `defaultMaxTokens`
+    /// or above `maxTokenBudget`.
+    public static func tokenBudget(boxes: Int, phrase: String) -> Int {
+        let perBox = 40 + (phrase.utf8.count + 1) / 2
+        return min(maxTokenBudget, max(defaultMaxTokens, 16 + max(1, boxes) * perBox))
+    }
 
     private let container: ModelContainer
     /// The loaded module graph (for the engine's inference-mode gate). Read-only use.
@@ -77,11 +91,12 @@ public final class Locator: @unchecked Sendable {
         return Locator(container: container, module: graph.module)
     }
 
-    /// Find `phrase` in `image`. `onToken` runs after every generated token (a cancellation point);
+    /// Find `phrase` in `image`. `maxTokens` nil sizes the generation for `maxBoxes` boxes
+    /// (`tokenBudget`). `onToken` runs after every generated token (a cancellation point);
     /// throwing from it stops the run and rethrows.
     public func locate(
         image: CGImage, phrase: String, maxBoxes: Int = 16,
-        maxSide: Int = Locator.defaultMaxSide, maxTokens: Int = Locator.defaultMaxTokens,
+        maxSide: Int = Locator.defaultMaxSide, maxTokens: Int? = nil,
         template: String = Locator.promptTemplate,
         onToken: @escaping @Sendable () throws -> Void = {}
     ) async throws -> LocateResult {
@@ -91,7 +106,9 @@ public final class Locator: @unchecked Sendable {
         let prompt = template.replacingOccurrences(of: "{p}", with: phrase)
         let cap = max(1, maxBoxes)
 
-        let out = try await generate(picture: picture, prompt: prompt, maxTokens: maxTokens,
+        // nil → room for `maxBoxes` boxes (v0.2.0's fixed 256 cut a list after about six).
+        let budget = maxTokens ?? Self.tokenBudget(boxes: cap, phrase: phrase)
+        let out = try await generate(picture: picture, prompt: prompt, maxTokens: budget,
                                      withOffsets: true, onToken: onToken)
         let boxes = GroundingParser.boxes(
             from: out.text, fallbackLabel: phrase, maxBoxes: cap, tokenEnds: out.ends, logprobs: out.logprobs)

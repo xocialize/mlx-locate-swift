@@ -7,17 +7,34 @@ mlx-swift-lm's `MLXVLM`, using its native grounding (boxes on a 0–1000 grid, o
 | Product | What |
 |---|---|
 | `Locate` | Engine-agnostic core: `Locator.load(directory:)`, `locate(image:phrase:maxBoxes:)` → `[LocatedBox]` (`x, y, width, height` as fractions of the upright picture, `label`, `score`), and `answer(image:question:)` |
-| `MLXLocate` | The MLXEngine package (`LocatePackage`, `LocateConfiguration`): an `imageAnalysis` surface with modes `locate` (default) and `answer` |
-| `locate-cli` | Gates: `yardstick`, `mem-bench`, `engine`, `query` |
+| `MLXLocate` | The MLXEngine package (`LocatePackage`, `LocateConfiguration`): an `imageLocate` surface (typed boxes) and an `imageAnalysis` surface (mode `answer`, and the older JSON `locate` mode) |
+| `locate-cli` | Gates: `yardstick`, `mem-bench`, `engine`, `typed`, `query` |
 
 ## Using it through the engine
 
-The engine contract has no box-typed capability yet, so the package serves `imageAnalysis`:
+**`imageLocate`** (engine contract 1.66.0, mlx-engine-swift ≥ 0.81.0; AB-A-0295):
 
-- **mode `locate`** (or no mode): `prompt` is the phrase. The response text is JSON in the `image.locate` output shape:
-  `{"boxes": [{"x": 0.27, "y": 0.47, "width": 0.06, "height": 0.07, "label": "the character's hands", "score": 0.63}]}`.
-  `metaData["count"]` (int) caps the number of boxes (default 16). An empty list is a success.
+```swift
+let response = try await engine.run(
+    ImageLocateRequest(image: image, prompt: "the character's hands", count: 2), package: id)
+let boxes = (response as! ImageLocateResponse).boxes   // [ImageLocateBox], best first
+```
+
+- `count` is the most boxes to return: nil means 1, and above 16 is refused before the run
+  (`ImageLocateControls(maxCount: 16, scores: true, seeded: false)`, `LocatePackage.locateControls`).
+- The model is always asked for up to 16 boxes, and the answer is `served(count:)`: clipped to the picture, in
+  descending score, cut to `count`. So `count: 1` returns the box the model is surest of, not the first one it wrote.
+  On a picture with many instances that costs the time of the full list (about 5–8 s for 16 boxes) whatever `count` is.
+- Every box has a `label` and a `score`. An empty list is a success. A seed is accepted and ignored.
+- `locate-cli typed` runs it through `MLXServeEngine` and exits non-zero unless
+  `ImageLocateControls.responseProblems` is empty and a count of 17 is refused (`receipts/typed/`).
+
+**`imageAnalysis`**:
+
 - **mode `answer`**: `prompt` is a question; the response is the model's text.
+- **mode `locate`** (or no mode): the carrier from before the typed capability, kept so v0.1.0 and v0.2.0 clients keep
+  working. The response text is JSON, `{"boxes": [{"x": 0.27, "y": 0.47, "width": 0.06, "height": 0.07, "label": "the character's hands", "score": 0.63}]}`,
+  in the model's own order; `metaData["count"]` (int) caps the list (default 16). New code should use `imageLocate`.
 
 Decoding is greedy, so the same picture and phrase give the same boxes. Transparency is composited over white, and the
 longest side is scaled to at most 1024 px (the measured envelope; `LocateConfiguration.maxSide` can lower it, not raise it).
@@ -39,7 +56,13 @@ M5 Max 128 GB, macOS 27.3, Release, mlx-swift 0.32.4 (fleet fork), mlx-swift-lm 
 `phys_footprint` after load with the weights evaluated; peak is the ledger peak over one query on a 1022×1024 picture
 (1,081 prompt tokens), one process per number, MLX cache uncapped. Query times are the median over 36 queries (12
 pictures × hair, face, head). The GPU was shared with other sessions' jobs (60–98 % utilisation before the runs), so a
-quiet GPU should be faster. The manifest declares 5.4 / 3.35 GB resident and 2.6 GB activation.
+quiet GPU should be faster.
+
+Those numbers are for one-box answers. A 16-box answer generates about 700 tokens and peaks higher: 8.05 GB (int8) and
+6.12 GB (int4) process peak on a 1024×1024 picture of 25 discs, through `MLXServeEngine`, two processes per quant
+(2026-11-25, `receipts/typed/`). The manifest declares 5.4 / 3.35 GB resident and 3.0 GB activation to cover that
+(2.6 GB before the typed surface). The generation budget grows with the box count and the phrase's length, up to 1,024
+tokens; v0.2.0's fixed 256 cut a list after about six boxes.
 
 Weights are evaluated inside `load()`, so the first request reads nothing from disk (the lesson of AB-A-0266).
 
@@ -72,6 +95,8 @@ the same licence). The training data is undisclosed, so the declared licence gov
 
 - Small or crowded objects, non-character pictures beyond a few spot checks, and pictures larger than 1024 px on a side
   (they are scaled down first).
-- A typed `image.locate` capability in the engine (asked of Gaea and mlx-engine on AB-A-0293).
+- More than 16 boxes a request (MES allows 64): not measured, so not declared.
+- Stopping the generation early when `count` is below what the picture holds.
+- Phrases in languages other than English.
 - Qwen3-VL-8B: the upstream bf16 folder on this Mac produced garbage tokens through MLXVLM 3.32.3. Not investigated.
 - Timings on a quiet GPU and on a 16 GB Mac.
